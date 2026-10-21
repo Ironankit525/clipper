@@ -1,0 +1,13 @@
+# Secrets
+.env
+
+# Everything a run produces: sources, clips, transcripts, logs, the queue
+data/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

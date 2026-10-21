@@ -1,0 +1,161 @@
+{
+  "name": "Clipper → YouTube Shorts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 9,14,19 * * *" }
+          ]
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Drip 3x daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-380, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clipper-upload",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Dashboard button",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-380, 200],
+      "webhookId": "a1000000-0000-4000-8000-00000000000b"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/uploads/next",
+        "options": { "timeout": 30000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Claim next clip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-140, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "version": 2 },
+          "conditions": [
+            {
+              "id": "has-clip",
+              "leftValue": "={{ $json.empty }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Anything queued?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [80, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.file_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "video" } }, "timeout": 600000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Fetch clip file",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 0]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Claim next clip').item.json.youtube.title }}",
+        "regionCode": "US",
+        "categoryId": "22",
+        "binaryProperty": "video",
+        "options": {
+          "description": "={{ $('Claim next clip').item.json.youtube.description }}",
+          "privacyStatus": "={{ $('Claim next clip').item.json.youtube.privacyStatus }}",
+          "tags": "={{ $('Claim next clip').item.json.youtube.tags.join(',') }}",
+          "selfDeclaredMadeForKids": false,
+          "notifySubscribers": false
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [560, 0],
+      "onError": "continueErrorOutput",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Claim next clip').item.json.result_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ video_id: $json.uploadId || $json.id }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Mark uploaded",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Claim next clip').item.json.result_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ error: String($json.error?.message || $json.error?.description || $json.message || $json.error || 'YouTube upload failed').slice(0, 300) }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Mark failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 120]
+    },
+    {
+      "parameters": {},
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Queue empty",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [320, 240]
+    }
+  ],
+  "connections": {
+    "Drip 3x daily": { "main": [[{ "node": "Claim next clip", "type": "main", "index": 0 }]] },
+    "Dashboard button": { "main": [[{ "node": "Claim next clip", "type": "main", "index": 0 }]] },
+    "Claim next clip": { "main": [[{ "node": "Anything queued?", "type": "main", "index": 0 }]] },
+    "Anything queued?": {
+      "main": [
+        [{ "node": "Fetch clip file", "type": "main", "index": 0 }],
+        [{ "node": "Queue empty", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch clip file": { "main": [[{ "node": "Upload to YouTube", "type": "main", "index": 0 }]] },
+    "Upload to YouTube": {
+      "main": [
+        [{ "node": "Mark uploaded", "type": "main", "index": 0 }],
+        [{ "node": "Mark failed", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "instanceId": "clipper-local" },
+  "tags": []
+}

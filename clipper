@@ -1,0 +1,80 @@
+#!/bin/zsh
+# Start, stop and check the Clipper server.
+#
+# The server runs as a launchd agent, so it survives closing the terminal and
+# starts again at login. That also means `kill` does not stop it: launchd puts
+# it straight back. Use this instead.
+
+set -e
+
+LABEL="com.clipper.app"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+TARGET="gui/$(id -u)/$LABEL"
+PORT=8000
+LOG="$(cd "$(dirname "$0")" && pwd)/data/server.log"
+
+running() { launchctl print "$TARGET" >/dev/null 2>&1; }
+
+case "${1:-status}" in
+  start)
+    if running; then
+      echo "already running"
+    else
+      launchctl bootstrap "gui/$(id -u)" "$PLIST"
+      sleep 2
+      echo "started"
+    fi
+    ;;
+
+  stop)
+    # bootout both stops it and stops launchd restarting it. It stays stopped
+    # until `clipper start`, or until the next login (the plist is still there).
+    if running; then
+      launchctl bootout "$TARGET" 2>/dev/null || true
+      sleep 1
+      echo "stopped"
+    else
+      echo "not running"
+    fi
+    ;;
+
+  restart)
+    launchctl kickstart -k "$TARGET"
+    sleep 2
+    echo "restarted"
+    ;;
+
+  disable)
+    # Survives logout and reboot: it will not come back until `clipper enable`.
+    launchctl bootout "$TARGET" 2>/dev/null || true
+    launchctl disable "$TARGET"
+    echo "disabled - will not start at login"
+    ;;
+
+  enable)
+    launchctl enable "$TARGET"
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+    echo "enabled - starts at login"
+    ;;
+
+  uninstall)
+    launchctl bootout "$TARGET" 2>/dev/null || true
+    rm -f "$PLIST"
+    echo "service removed. Run it by hand with:"
+    echo "  .venv/bin/uvicorn app.main:app --port $PORT"
+    ;;
+
+  log)
+    tail -f "$LOG"
+    ;;
+
+  status | *)
+    if running; then
+      pid=$(launchctl print "$TARGET" 2>/dev/null | awk '/^\tpid = /{print $3}')
+      code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$PORT/" || echo 000)
+      echo "running (pid ${pid:-?}) - http://localhost:$PORT answers $code"
+    else
+      echo "not running"
+    fi
+    ;;
+esac

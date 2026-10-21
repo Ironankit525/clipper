@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipper</title>
+<style>
+  :root {
+    --bg: #0b0c0f; --panel: #14161b; --line: #262a33;
+    --text: #e8eaf0; --dim: #8d94a3; --accent: #ff4d6d; --good: #3ddc97;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 40px 16px 80px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.02em; }
+  .sub { color: var(--dim); margin: 0 0 28px; font-size: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-bottom: 6px; }
+  input, select {
+    width: 100%; background: #0e1014; border: 1px solid var(--line); color: var(--text);
+    border-radius: 9px; padding: 11px 13px; font-size: 15px; font-family: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 120px 120px 120px; gap: 12px; align-items: end; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+    padding: 12px 22px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .go { margin-top: 16px; }
+  .warn { background: #2a1a1d; border: 1px solid #5c2b33; color: #ffb3c0; padding: 12px 14px; border-radius: 9px; margin-bottom: 16px; font-size: 14px; }
+  #log {
+    margin-top: 20px; display: none; background: #0e1014; border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px; max-height: 240px; overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--dim);
+    white-space: pre-wrap;
+  }
+  #log b { color: var(--text); font-weight: 500; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; margin-top: 28px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .card video { width: 100%; display: block; background: #000; aspect-ratio: 9/16; }
+  .meta { padding: 13px 14px 15px; }
+  .score { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--good); }
+  .hook { font-weight: 650; margin: 7px 0 5px; font-size: 14.5px; line-height: 1.35; }
+  .why { color: var(--dim); font-size: 12.5px; margin: 0 0 10px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--dim); }
+  .foot a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .progress-wrap {
+    margin-top: 18px;
+    background: #0e1014;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: none;
+  }
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .progress-stage {
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: 11px;
+    background: rgba(255, 77, 109, 0.12);
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 77, 109, 0.25);
+  }
+  .progress-detail {
+    color: var(--dim);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  .progress-track {
+    background: #181b22;
+    border-radius: 999px;
+    height: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff4d6d, #ff8da1);
+    border-radius: 999px;
+    transition: width 0.25s ease-out;
+    box-shadow: 0 0 10px rgba(255, 77, 109, 0.5);
+  }
+  .stepper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .step-pill {
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #14171d;
+    border: 1px solid var(--line);
+    transition: all 0.2s ease;
+  }
+  .step-pill.active {
+    color: #fff;
+    border-color: var(--accent);
+    background: rgba(255, 77, 109, 0.2);
+    font-weight: 600;
+  }
+  .step-pill.done {
+    color: var(--good);
+    border-color: rgba(61, 220, 151, 0.35);
+  }
+  .history { margin-top: 28px; }
+  .history h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+  .hitem {
+    display: flex; align-items: center; gap: 12px; padding: 11px 13px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px;
+  }
+  .hitem:hover { border-color: #39404d; }
+  .hitem.sel { border-color: var(--accent); }
+  .hthumb { width: 38px; height: 58px; object-fit: cover; border-radius: 6px; background: #0e1014; flex: none; }
+  .hbody { flex: 1; min-width: 0; }
+  .htitle { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hmeta { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--line); flex: none; }
+  .badge.done { color: var(--good); border-color: rgba(61,220,151,.35); background: rgba(61,220,151,.1); }
+  .badge.error, .badge.interrupted { color: #ffb3c0; border-color: #5c2b33; background: #2a1a1d; }
+  .badge.running { color: var(--accent); border-color: rgba(255,77,109,.3); background: rgba(255,77,109,.12); }
+  .del { background: none; color: var(--dim); border: 0; font-size: 16px; padding: 4px 6px; cursor: pointer; flex: none; }
+  .del:hover { color: var(--accent); }
+  .empty { color: var(--dim); font-size: 13px; }
+  .diskbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+    padding: 10px 14px; margin-bottom: 10px; font-size: 13px; flex-wrap: wrap; }
+  .disktext { color: var(--dim); }
+  .disktext b { color: var(--text); font-weight: 600; }
+  .descwrap { width: 100%; margin: 2px 0 2px 46px; display: flex; gap: 8px; align-items: flex-start; }
+  .descwrap textarea {
+    flex: 1; min-height: 46px; resize: vertical; background: #0e1014;
+    border: 1px solid var(--line); color: var(--text); border-radius: 8px;
+    padding: 8px 10px; font: 12.5px/1.45 inherit; font-family: inherit;
+  }
+  .descwrap textarea:focus { outline: none; border-color: var(--accent); }
+  .descside { display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .descnote { font-size: 11.5px; color: var(--dim); margin: 0 0 2px 46px; width: 100%; }
+  .descnote a { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 600; }
+  .hsize { font-size: 11.5px; color: var(--dim); white-space: nowrap; flex: none; }
+
+  /* Status palette - reserved for state, always paired with an icon + label */
+  .up { margin-top: 34px; }
+  .up-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .up-head h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0; font-weight: 600; }
+  .up-actions { display: flex; gap: 8px; }
+  .btn-sm { background: #1b1f27; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-sm:hover { border-color: #39404d; }
+  .btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tile-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); font-weight: 600; }
+  .tile-num { font-size: 28px; font-weight: 700; letter-spacing: -.02em; margin-top: 6px; line-height: 1; }
+  .tile-sub { font-size: 11.5px; color: var(--dim); margin-top: 5px; }
+  .i { width: 13px; height: 13px; flex: none; }
+  .s-good { color: #0ca30c; }
+  .s-warn { color: #fab219; }
+  .s-crit { color: #d03b3b; }
+  .s-mute { color: var(--dim); }
+  .uptable { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .uprow { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .uprow:first-child { border-top: 0; }
+  .upthumb { width: 34px; height: 52px; object-fit: cover; border-radius: 5px; background: #0e1014; flex: none; }
+  .upbody { flex: 1 1 240px; min-width: 0; }
+  .uphook { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .upmeta { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .upstate { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; flex: none; min-width: 112px; }
+  .upbtns { display: flex; gap: 6px; flex: none; }
+  .upbtns a { color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; align-self: center; }
+  @media (max-width: 640px) {
+    .uprow { flex-wrap: wrap; }
+    .upstate { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Clipper</h1>
+  <p class="sub">Long video in, ranked vertical shorts out — cut, reframed and captioned.</p>
+
+  <div id="warn"></div>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="url">YouTube URL</label>
+        <input id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+      </div>
+      <div>
+        <label for="n">Clips</label>
+        <select id="n">
+          <option>3</option><option>4</option><option>5</option>
+          <option selected>6</option><option>8</option><option>10</option><option>12</option>
+        </select>
+      </div>
+      <div>
+        <label for="min">Min secs</label>
+        <input id="min" type="number" value="20" min="5" max="120">
+      </div>
+      <div>
+        <label for="max">Max secs</label>
+        <input id="max" type="number" value="60" min="10" max="180">
+      </div>
+    </div>
+    <button class="go" id="go">Make clips</button>
+
+    <div id="progress-box" class="progress-wrap">
+      <div class="progress-header">
+        <span id="progress-stage" class="progress-stage">Starting...</span>
+        <span id="progress-detail" class="progress-detail">0%</span>
+      </div>
+      <div class="progress-track">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <div class="stepper">
+        <span id="step-dl" class="step-pill">1. Download</span>
+        <span id="step-tr" class="step-pill">2. Transcribe</span>
+        <span id="step-ai" class="step-pill">3. Select Moments</span>
+        <span id="step-rn" class="step-pill">4. Render Clips</span>
+      </div>
+    </div>
+
+    <div id="log"></div>
+  </div>
+
+  <div class="history">
+    <h2>Previous runs</h2>
+    <div class="diskbar">
+      <span class="disktext" id="disk-text">Checking disk…</span>
+      <span class="up-actions">
+        <button class="btn-sm" id="disk-clean">Free up space</button>
+      </span>
+    </div>
+    <div id="history"><p class="empty">Nothing yet.</p></div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="up">
+    <div class="up-head">
+      <h2>YouTube Shorts queue</h2>
+      <div class="up-actions">
+        <button class="btn-sm" id="up-refresh">Refresh</button>
+        <button class="btn-sm" id="up-approve-all">Approve all</button>
+        <button class="btn-sm primary" id="up-run">Upload next now</button>
+      </div>
+    </div>
+    <div class="tiles" id="up-tiles"></div>
+    <div class="uptable" id="up-table"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+fetch("/api/config").then(r => r.json()).then(cfg => {
+  if (cfg.problems.length) {
+    $("warn").innerHTML = `<div class="warn"><b>Not configured yet:</b> ${
+      cfg.problems.join(" · ")}<br>Edit <code>.env</code> and restart.</div>`;
+  }
+});
+
+let jobId = null;
+let es = null;
+
+const RUNNING = ["queued", "downloading", "transcribing", "analysing", "rendering"];
+
+function ago(ts) {
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+
+function bytes(n) {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${i === 0 ? n.toFixed(0) : n.toFixed(1)} ${u[i]}`;
+}
+
+async function loadHistory() {
+  const [jobs, disk] = await Promise.all([
+    fetch("/api/jobs").then(r => r.json()).catch(() => []),
+    fetch("/api/storage").then(r => r.json()).catch(() => ({ jobs: {}, total: 0, reclaimable: 0 })),
+  ]);
+
+  $("disk-text").innerHTML = disk.reclaimable
+    ? `<b>${bytes(disk.total)}</b> on disk · <b>${bytes(disk.reclaimable)}</b> can be freed ` +
+      `<span style="opacity:.75">(source videos of finished runs, working files, clips already posted)</span>`
+    : `<b>${bytes(disk.total)}</b> on disk · nothing to clean up`;
+  $("disk-clean").disabled = !disk.reclaimable;
+  if (!jobs.length) {
+    $("history").innerHTML = `<p class="empty">Nothing yet.</p>`;
+    return;
+  }
+  $("history").innerHTML = jobs.map(j => {
+    const cls = RUNNING.includes(j.status) ? "running" : j.status;
+    const use = disk.jobs[j.id] || { total: 0, reclaimable: 0, source: 0 };
+    const bits = [j.clips ? `${j.clips} clips` : "no clips yet", ago(j.updated), j.url];
+    const free = use.reclaimable
+      ? `<button class="btn-sm" data-free="${j.id}" title="Delete the source video, working files and clips already posted. Clips still queued are kept.">Free ${bytes(use.reclaimable)}</button>`
+      : "";
+    return `<div class="hitem ${j.id === jobId ? "sel" : ""}" data-id="${j.id}">
+      ${j.thumb ? `<img class="hthumb" src="/api/jobs/${j.id}/file/${j.thumb}" alt="">`
+                : `<div class="hthumb"></div>`}
+      <div class="hbody">
+        <div class="htitle">${escapeHtml(j.title || j.url)}</div>
+        <div class="hmeta">${escapeHtml(bits.join(" · "))}</div>
+      </div>
+      <span class="hsize">${bytes(use.total)}</span>
+      ${free}
+      <span class="badge ${cls}">${j.status}</span>
+      <button class="del" title="Delete this run and everything in it">✕</button>
+    </div>`;
+  }).join("");
+
+  $("history").querySelectorAll("[data-free]").forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.free;
+      if (!confirm("Delete the source video, working files and any clips already " +
+                   "posted?\n\nClips still waiting to upload are kept, and so are " +
+                   "the transcript and thumbnails. Re-rendering this run later " +
+                   "would download the video again.")) return;
+      btn.disabled = true;
+      const r = await fetch(`/api/jobs/${id}/cleanup`, { method: "POST" })
+                      .then(x => x.json()).catch(() => null);
+      if (r) append(`Freed ${bytes(r.freed)} from ${id}`);
+      $("disk-clean").onclick = async () => {
+  if (!confirm("Clean up every run?\n\nDeletes source videos of finished runs, " +
+               "working files, and clips already posted. Queued clips, transcripts " +
+               "and thumbnails are kept.")) return;
+  $("disk-clean").disabled = true;
+  const r = await fetch("/api/storage/sweep", { method: "POST" })
+                  .then(x => x.json()).catch(() => null);
+  if (r) {
+    $("log").style.display = "block";
+    append(`Freed ${bytes(r.freed)} across ${r.jobs.length} run(s)`);
+  }
+  loadHistory();
+};
+
+loadHistory();
+    };
+  });
+
+  $("history").querySelectorAll(".hitem").forEach(el => {
+    el.onclick = (ev) => {
+      if (ev.target.classList.contains("del") || ev.target.dataset.free) return;
+      openJob(el.dataset.id);
+    };
+    el.querySelector(".del").onclick = async () => {
+      const id = el.dataset.id;
+      if (!confirm("Delete this run and all its downloaded files?")) return;
+      await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (id === jobId) { jobId = null; $("grid").innerHTML = ""; }
+      loadHistory();
+    };
+  });
+}
+
+async function openJob(id) {
+  const job = await fetch(`/api/jobs/${id}`).then(r => r.ok ? r.json() : null);
+  if (!job) return;
+  jobId = id;
+  $("url").value = job.url;
+  $("log").style.display = "block";
+  $("log").innerHTML = "";
+  job.logs.forEach(append);
+  $("grid").innerHTML = "";
+  if (job.clips.length) render(id, job.clips);
+
+  $("progress-box").style.display = "block";
+  const p = job.progress || {};
+  $("progress-fill").style.width = (p.percent || 0) + "%";
+  $("progress-stage").textContent = p.stage || job.status;
+  $("progress-detail").textContent = p.text || job.error || "";
+  updateStepper(p.stage || job.status);
+
+  if (RUNNING.includes(job.status)) { $("go").disabled = true; listen(id); }
+  loadHistory();
+}
+
+loadHistory();
+
+$("go").onclick = async () => {
+  const url = $("url").value.trim();
+  if (!url) return;
+  $("go").disabled = true;
+  $("grid").innerHTML = "";
+  $("log").style.display = "block";
+  $("log").innerHTML = "";
+
+  $("progress-box").style.display = "block";
+  $("progress-fill").style.width = "0%";
+  $("progress-stage").textContent = "Connecting...";
+  $("progress-detail").textContent = "0%";
+  updateStepper("downloading");
+
+  const res = await fetch("/api/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url,
+      n_clips: parseInt($("n").value),
+      min_s: parseInt($("min").value),
+      max_s: parseInt($("max").value),
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "request failed" }));
+    append("ERROR: " + (err.detail || "request failed"));
+    $("progress-stage").textContent = "Error";
+    $("progress-detail").textContent = err.detail || "request failed";
+    $("go").disabled = false;
+    return;
+  }
+
+  jobId = (await res.json()).id;
+  listen(jobId);
+  loadHistory();
+};
+
+function append(line) {
+  $("log").insertAdjacentHTML("beforeend", `<b>›</b> ${escapeHtml(line)}\n`);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function updateStepper(stage) {
+  const steps = ["step-dl", "step-tr", "step-ai", "step-rn"];
+  steps.forEach(s => $(s).className = "step-pill");
+  if (stage === "downloading") {
+    $("step-dl").className = "step-pill active";
+  } else if (stage === "transcribing") {
+    $("step-dl").className = "step-pill done";
+    $("step-tr").className = "step-pill active";
+  } else if (stage === "analysing") {
+    $("step-dl").className = "step-pill done";
+    $("step-tr").className = "step-pill done";
+    $("step-ai").className = "step-pill active";
+  } else if (stage === "rendering") {
+    $("step-dl").className = "step-pill done";
+    $("step-tr").className = "step-pill done";
+    $("step-ai").className = "step-pill done";
+    $("step-rn").className = "step-pill active";
+  } else if (stage === "done") {
+    steps.forEach(s => $(s).className = "step-pill done");
+  }
+}
+
+function listen(id) {
+  $("progress-box").style.display = "block";
+  if (es) es.close();
+  es = new EventSource(`/api/jobs/${id}/stream`);
+  es.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.log) append(msg.log);
+
+    if (msg.progress) {
+      const p = msg.progress;
+      const pct = typeof p.percent === "number" ? Math.min(100, Math.max(0, p.percent)) : 0;
+      $("progress-fill").style.width = pct + "%";
+      if (p.stage) $("progress-stage").textContent = p.stage;
+      if (p.text) $("progress-detail").textContent = p.text;
+      updateStepper(p.stage || msg.status);
+    }
+
+    if (msg.clips && msg.clips.length) render(id, msg.clips);
+
+    if (msg.status && !RUNNING.includes(msg.status)) {
+      es.close();
+      $("go").disabled = false;
+      loadHistory();
+      if (msg.status === "done") {
+        $("progress-fill").style.width = "100%";
+        $("progress-stage").textContent = "Done";
+        $("progress-detail").textContent = "All clips ready";
+        updateStepper("done");
+      } else {
+        $("progress-stage").textContent = msg.status === "interrupted" ? "Interrupted" : "Failed";
+        $("progress-detail").textContent = msg.error || msg.progress?.text || "Run stopped";
+      }
+    }
+  };
+  es.onerror = () => { es.close(); $("go").disabled = false; loadHistory(); };
+}
+
+function render(id, clips) {
+  $("grid").innerHTML = clips.map(c => `
+    <div class="card">
+      <video src="/api/jobs/${id}/file/${c.file}" controls preload="metadata"
+             poster="/api/jobs/${id}/file/${c.thumb}"></video>
+      <div class="meta">
+        <span class="score">▲ ${c.virality}</span>
+        <div class="hook">${escapeHtml(c.hook || "")}</div>
+        <p class="why">${escapeHtml(c.reason || "")}</p>
+        <div class="foot">
+          <span>${c.duration}s</span>
+          <a href="/api/jobs/${id}/file/${c.file}" download="clip_${c.index}.mp4">Download</a>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+// Status is carried by an icon and a word, never by colour alone.
+const STATE = {
+  uploaded:  { label: "Uploaded",  cls: "s-good", icon: "M20 6L9 17l-5-5" },
+  approved:  { label: "Queued",    cls: "s-warn", icon: "M12 19V5M5 12l7-7 7 7" },
+  uploading: { label: "Uploading", cls: "s-warn", icon: "M12 2v6m0 8v6M2 12h6m8 0h6" },
+  failed:    { label: "Failed",    cls: "s-crit", icon: "M18 6L6 18M6 6l12 12" },
+  new:       { label: "Review",    cls: "s-mute", icon: "M12 8v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+  skipped:   { label: "Skipped",   cls: "s-mute", icon: "M5 12h14" },
+};
+
+function icon(d, cls) {
+  return `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+}
+
+async function loadUploads() {
+  const data = await fetch("/api/uploads").then(r => r.json()).catch(() => null);
+  if (!data) return;
+  const s = data.stats;
+
+  const tiles = [
+    ["Uploaded", s.uploaded, STATE.uploaded, `${s.uploaded_today}/${s.daily_limit} today · ${s.total} clips total`],
+    ["Queued", s.queued, STATE.approved, "approved, waiting for n8n"],
+    ["Needs review", s.pending_review, STATE.new, "approve to queue"],
+    ["Failed", s.failed, STATE.failed, s.failed ? "retry below" : "none"],
+  ];
+  $("up-tiles").innerHTML = tiles.map(([label, n, st, sub]) => `
+    <div class="tile">
+      <div class="tile-label">${icon(st.icon, st.cls)}${label}</div>
+      <div class="tile-num">${n}</div>
+      <div class="tile-sub">${escapeHtml(sub)}</div>
+    </div>`).join("");
+
+  if (!data.clips.length) {
+    $("up-table").innerHTML = `<div class="uprow"><span class="empty">No clips rendered yet.</span></div>`;
+    return;
+  }
+
+  $("up-table").innerHTML = data.clips.map(c => {
+    const st = STATE[c.status] || STATE.new;
+    const bits = [`score ${c.virality}`, `${c.duration}s`, c.source_title || c.job_id];
+    if (c.error) bits.push(c.error);
+    const btns = [];
+    if (c.status === "approved") {
+      btns.push(`<button class="btn-sm primary" data-postnow="1">Post now</button>`);
+      btns.push(`<button class="btn-sm" data-act="unapprove">Unqueue</button>`);
+    } else if (c.status === "failed") {
+      btns.push(`<button class="btn-sm" data-act="retry">Retry</button>`);
+      btns.push(`<button class="btn-sm" data-act="skip">Skip</button>`);
+    } else if (c.status === "skipped") {
+      btns.push(`<button class="btn-sm" data-act="approve">Queue it</button>`);
+    }
+    if (c.video_id && c.status === "uploaded") {
+      btns.push(`<a href="https://youtube.com/watch?v=${encodeURIComponent(c.video_id)}" target="_blank" rel="noopener">Watch</a>`);
+    }
+
+    const custom = c.custom_description || "";
+    const editor = c.status === "new" ? `
+      <div class="descwrap">
+        <textarea data-desc placeholder="Description (optional) — leave blank and the generated one is used. Links are fine here.">${escapeHtml(custom)}</textarea>
+        <div class="descside">
+          <button class="btn-sm" data-act="approve" data-with-desc="1">Approve</button>
+          <button class="btn-sm primary" data-postnow="1" data-with-desc="1">Post now</button>
+          <button class="btn-sm" data-act="skip">Skip</button>
+        </div>
+      </div>
+      <div class="descnote"><a data-showdefault>Show the generated description</a></div>` : "";
+
+    const customNote = (custom && c.status !== "new")
+      ? `<div class="descnote">Custom description set${c.status === "approved" ? " — Unqueue to edit" : ""}</div>`
+      : "";
+
+    return `<div class="uprow" data-job="${c.job_id}" data-idx="${c.index}">
+      ${c.thumb ? `<img class="upthumb" src="/api/jobs/${c.job_id}/file/${c.thumb}" alt="">`
+                : `<div class="upthumb"></div>`}
+      <div class="upbody">
+        <div class="uphook">${escapeHtml(c.hook || c.title || c.file)}</div>
+        <div class="upmeta">${escapeHtml(bits.join(" · "))}</div>
+      </div>
+      <span class="upstate ${st.cls}">${icon(st.icon, st.cls)}${st.label}</span>
+      <div class="upbtns">${btns.join("")}</div>
+      ${editor}${customNote}
+    </div>`;
+  }).join("");
+
+  $("up-table").querySelectorAll("[data-showdefault]").forEach(link => {
+    link.onclick = async () => {
+      const row = link.closest(".uprow");
+      const box = row.querySelector("[data-desc]");
+      link.textContent = "Loading…";
+      const p = await fetch(`/api/uploads/${row.dataset.job}/${row.dataset.idx}/preview`)
+                      .then(r => r.json()).catch(() => null);
+      if (p) {
+        box.value = p.default_description;      // edit it, or clear it to use as-is
+        box.focus();
+      }
+      link.textContent = "Show the generated description";
+    };
+  });
+
+  $("up-table").querySelectorAll("[data-postnow]").forEach(btn => {
+    btn.onclick = async () => {
+      const row = btn.closest(".uprow");
+      const box = row.querySelector("[data-desc]");
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Posting…";
+      const r = await fetch(`/api/uploads/${row.dataset.job}/${row.dataset.idx}/post-now`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(box ? { description: box.value } : {}),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out.detail || "Could not post this clip.");
+        btn.disabled = false;
+        btn.textContent = label;
+      } else {
+        $("log").style.display = "block";
+        append(out.detail || "queued");
+        btn.textContent = out.triggered ? "Posting…" : "Queued first";
+        // YouTube takes ~30s; look again once it should be done
+        setTimeout(loadUploads, 8000);
+        setTimeout(loadUploads, 35000);
+      }
+      loadUploads();
+    };
+  });
+
+  $("up-table").querySelectorAll("[data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      const row = btn.closest(".uprow");
+      btn.disabled = true;
+      const box = row.querySelector("[data-desc]");
+      const body = btn.dataset.withDesc && box
+        ? { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: box.value }) }
+        : { method: "POST" };
+      const r = await fetch(`/api/uploads/${row.dataset.job}/${row.dataset.idx}/${btn.dataset.act}`,
+                            body);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(err.detail || "That action was refused.");
+      }
+      loadUploads();
+    };
+  });
+}
+
+$("up-refresh").onclick = loadUploads;
+$("up-approve-all").onclick = async () => {
+  await fetch("/api/uploads/approve-all", { method: "POST" });
+  loadUploads();
+};
+$("up-run").onclick = async () => {
+  const btn = $("up-run");
+  btn.disabled = true;
+  btn.textContent = "Triggering n8n...";
+  const res = await fetch("/api/uploads/run-now", { method: "POST" })
+                    .then(r => r.json()).catch(() => ({ detail: "n8n unreachable" }));
+  btn.textContent = res.ok ? "Sent to n8n" : (res.detail || "n8n error");
+  setTimeout(() => { btn.textContent = "Upload next now"; btn.disabled = false; }, 2500);
+  setTimeout(loadUploads, 1500);
+};
+
+loadUploads();
+setInterval(loadUploads, 20000);
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]
+  ));
+}
+</script>
+</body>
+</html>
