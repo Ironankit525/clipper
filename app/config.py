@@ -34,6 +34,14 @@ YT_DAILY_LIMIT = int(os.getenv("YT_DAILY_LIMIT", "10"))
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678/webhook/clipper-upload").strip()
 
+# The drip relies on n8n's cron, which fires whether or not this machine is
+# awake to answer it. A laptop in deep sleep misses the slot entirely. Clipper
+# therefore keeps its own watch: when it is running and a slot has gone by
+# unposted, it pokes n8n itself.
+CATCHUP = os.getenv("CATCHUP", "true").lower() == "true"
+DRIP_HOURS = [int(h) for h in os.getenv("DRIP_HOURS", "9,14,19").split(",") if h.strip()]
+CATCHUP_EVERY = int(os.getenv("CATCHUP_EVERY", "300"))   # seconds between checks
+
 # A job interrupted by a restart picks up where it left off (download and
 # transcript are cached), so the default is to just carry on.
 AUTO_RESUME = os.getenv("AUTO_RESUME", "true").lower() == "true"

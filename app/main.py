@@ -11,6 +11,32 @@ from pydantic import BaseModel
 
 from . import config, pipeline, storage, uploads
 
+async def catchup_loop() -> None:
+    """Serve a drip slot the machine slept through.
+
+    n8n's cron fires on schedule whether or not this laptop is awake to answer
+    it; a sleeping Mac answers ECONNREFUSED and the slot is simply lost. This
+    checks shortly after every wake, so the post goes out late rather than not
+    at all. Each slot is marked served, so n8n and this never double-post.
+    """
+    while True:
+        await asyncio.sleep(config.CATCHUP_EVERY)
+        try:
+            slot = uploads.due_slot()
+            if not slot or not uploads.has_work():
+                continue
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(config.N8N_WEBHOOK_URL,
+                                         json={"source": "catchup", "slot": slot})
+            if resp.status_code < 400:
+                uploads.mark_slot(slot)
+                print(f"[catchup] served missed slot {slot}", flush=True)
+        except (httpx.HTTPError, OSError) as exc:
+            print(f"[catchup] n8n unreachable: {exc}", flush=True)
+        except Exception as exc:                    # never let the loop die
+            print(f"[catchup] {exc!r}", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """A restart used to abandon whatever was running. Pick it back up.
@@ -26,7 +52,11 @@ async def lifespan(_: FastAPI):
             job.resumes += 1
             job.log(f"Resuming after a restart (attempt {job.resumes}).")
             asyncio.create_task(asyncio.to_thread(pipeline.run, job))
+
+    watcher = asyncio.create_task(catchup_loop()) if config.CATCHUP else None
     yield
+    if watcher:
+        watcher.cancel()
 
 
 app = FastAPI(title="Clipper", lifespan=lifespan)
@@ -170,6 +200,9 @@ def approve_all() -> dict:
 def next_upload() -> dict:
     """n8n pulls one clip per run. Empty means the queue is drained."""
     clip = uploads.claim_next(config.PUBLIC_URL)
+    slot = uploads.due_slot()
+    if slot:
+        uploads.mark_slot(slot)        # whoever asked, this slot is served
     return clip or {"empty": True, "reason": "nothing approved"}
 
 

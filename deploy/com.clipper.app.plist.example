@@ -10,11 +10,15 @@
         <string>/ABSOLUTE/PATH/TO/clipper/.venv/bin/uvicorn</string>
         <string>app.main:app</string>
         <string>--host</string>
-        <string>127.0.0.1</string>
+        <string>::1</string>
         <string>--port</string>
         <string>8000</string>
     </array>
 
+    <!-- ::1, not 127.0.0.1: on macOS "localhost" resolves to IPv6 first, and
+         Node (which n8n runs on) does not fall back to IPv4. Bound to IPv4
+         only, every n8n call failed with ECONNREFUSED while curl and the
+         browser worked, because those do fall back. Loopback either way. -->
     <key>WorkingDirectory</key>
     <string>/ABSOLUTE/PATH/TO/clipper</string>
 

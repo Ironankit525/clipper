@@ -68,6 +68,10 @@ drop it in `~/Library/LaunchAgents/`, and Clipper starts at login and restarts
 if it crashes. An interrupted job resumes itself on the next start, since every
 stage caches its output.
 
+Clipper binds **`::1`**, not `127.0.0.1`. On macOS `localhost` resolves to IPv6
+first and Node does not fall back, so an IPv4-only bind is unreachable from n8n
+while curl and the browser still work — a confusing failure worth avoiding.
+
 ### Starting and stopping
 
 Clipper runs as a launchd agent, so it survives closing the terminal and comes

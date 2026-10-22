@@ -62,6 +62,30 @@ next day. Raising the cap lets more through when quota allows; it cannot create
 quota. A permanent increase needs a quota extension request to Google, which
 involves an audit.
 
+## If n8n says the connection was refused
+
+`NodeApiError: The service refused the connection` on **Claim next clip**,
+while `curl http://localhost:8000` works fine from a terminal, is an
+IPv4/IPv6 split, not a dead server:
+
+- macOS resolves `localhost` to `::1` first, then `127.0.0.1`
+- curl and browsers try the second address when the first refuses; **Node,
+  which n8n runs on, does not**
+- so a server bound only to `127.0.0.1` is invisible to n8n
+
+Clipper's launchd agent therefore binds `::1`. Running it by hand, use
+`--host ::1` too, or point the workflow at `http://127.0.0.1:8000` instead of
+`localhost`.
+
+## When the machine is asleep
+
+n8n's cron fires whether or not the Mac is awake to answer it, and a laptop in
+deep sleep answers nothing — the slot is burned on a failed run. Clipper keeps
+its own watch (`CATCHUP`, every `CATCHUP_EVERY` seconds): if a drip hour in
+`DRIP_HOURS` has passed unserved and clips are queued, it pokes the webhook
+itself, so the post goes out late rather than never. Whichever side serves a
+slot marks it, so they never double-post.
+
 ## Endpoints the workflow uses
 
 | Method | Path | Purpose |

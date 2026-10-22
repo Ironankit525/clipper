@@ -347,3 +347,41 @@ def record_result(job_id: str, index: int, video_id: str | None,
         from . import storage              # local: storage imports uploads
         storage.clean(job_id, working=False, posted=True)
     return row
+
+
+# --------------------------------------------------------------------------- #
+# Missed-slot catch-up
+# --------------------------------------------------------------------------- #
+DRIP_STATE = config.DATA / "drip.json"
+
+
+def _drip_state() -> dict:
+    try:
+        return json.loads(DRIP_STATE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def due_slot(now: float | None = None) -> str | None:
+    """The most recent drip slot that has passed today and not yet been served.
+
+    Returns a slot key like "2026-10-22T09" so each slot fires at most once,
+    whether it was n8n's cron or this catch-up that served it.
+    """
+    now = now or time.time()
+    local = time.localtime(now)
+    passed = [h for h in sorted(config.DRIP_HOURS) if h <= local.tm_hour]
+    if not passed:
+        return None
+    key = f"{local.tm_year:04d}-{local.tm_mon:02d}-{local.tm_mday:02d}T{passed[-1]:02d}"
+    return None if _drip_state().get("last") == key else key
+
+
+def mark_slot(key: str) -> None:
+    DRIP_STATE.write_text(json.dumps({"last": key, "at": time.time()}))
+
+
+def has_work() -> bool:
+    clips = _load().get("clips", {})
+    return (uploaded_today(clips) < config.YT_DAILY_LIMIT
+            and any(r["status"] == APPROVED for r in clips.values()))
