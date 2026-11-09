@@ -12,7 +12,12 @@ import time
 import httpx
 
 RETRY_STATUS = (408, 429, 500, 502, 503, 504)
-RETRIES = 4
+# A provider "high demand" spike lasts minutes, not seconds. Selection is the
+# last cheap step after a long download and transcribe, so it is worth waiting
+# several minutes for rather than failing the run.
+RETRIES = 4              # each retry is a request, and a free key only has 20 a day
+BACKOFF_CAP = 120         # seconds between attempts
+MAX_QUOTA_WAIT = 120      # a 429 that asks for longer than this is a daily cap
 
 from . import config
 
@@ -105,6 +110,34 @@ def select(transcript: dict, duration: float, n_clips: int,
     return clips
 
 
+def _explain(provider: str, resp: httpx.Response) -> str:
+    """One readable line instead of a raw JSON dump."""
+    try:
+        msg = resp.json().get("error", {}).get("message", "")
+    except ValueError:
+        msg = ""
+    msg = " ".join(msg.split())
+    if resp.status_code == 429:
+        wait = re.search(r"retry in ([0-9hms.]+)", msg)
+        return (f"{provider} daily quota is used up"
+                + (f" - it resets in about {wait.group(1).split('.')[0]}s" if wait else "")
+                + ". The free tier allows 20 requests a day per Google project and model.")
+    if resp.status_code == 503:
+        return f"{provider} is overloaded right now (503). Try again in a few minutes."
+    return f"{provider} selection failed: {resp.status_code} {msg[:300] or resp.text[:300]}"
+
+
+def _quota_exhausted(last) -> bool:
+    """True for a 429 that tells us to come back in hours, not seconds."""
+    if not isinstance(last, httpx.Response) or last.status_code != 429:
+        return False
+    match = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", last.text)
+    if not match:
+        return False
+    hours, minutes, seconds = (float(g or 0) for g in match.groups())
+    return hours * 3600 + minutes * 60 + seconds > MAX_QUOTA_WAIT
+
+
 def _post(send) -> httpx.Response:
     """Selection is one call at the end of a long pipeline; a provider hiccup
     should cost a few seconds, not the whole run."""
@@ -118,8 +151,10 @@ def _post(send) -> httpx.Response:
             if resp.status_code not in RETRY_STATUS:
                 return resp
             last = resp
+        if _quota_exhausted(last):
+            break                          # waiting will not fix a daily limit
         if attempt < RETRIES - 1:
-            time.sleep(min(2 ** attempt * 3, 30) + random.uniform(0, 1.5))
+            time.sleep(min(2 ** attempt * 15, BACKOFF_CAP) + random.uniform(0, 2))
     if isinstance(last, httpx.Response):
         return last
     raise RuntimeError(f"selection request failed: {last}")
@@ -141,7 +176,7 @@ def _openai(system: str, user: str) -> str:
             },
         ))
     if resp.status_code != 200:
-        raise RuntimeError(f"OpenAI selection failed: {resp.status_code} {resp.text[:400]}")
+        raise RuntimeError(_explain("OpenAI", resp))
     return resp.json()["choices"][0]["message"]["content"]
 
 
@@ -165,7 +200,7 @@ def _gemini(system: str, user: str) -> str:
             },
         ))
     if resp.status_code != 200:
-        raise RuntimeError(f"Gemini selection failed: {resp.status_code} {resp.text[:400]}")
+        raise RuntimeError(_explain("Gemini", resp))
     body = resp.json()
     try:
         return body["candidates"][0]["content"]["parts"][0]["text"]

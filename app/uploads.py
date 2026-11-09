@@ -10,13 +10,60 @@ Lifecycle:
                           +------> failed -> (retry) approved
     new -> skipped
 """
+import functools
 import json
 import os
+import shutil
+import subprocess
+import threading
 import time
 
 from . import config, pipeline
 
 REGISTRY = config.DATA / "uploads.json"
+
+# Every change to the registry is load -> modify -> save. FastAPI runs these
+# endpoints on a thread pool, and n8n's cron, the catch-up watcher and the
+# dashboard can all arrive in the same millisecond. Unserialised, two claims
+# could take the *same* clip (a duplicate upload) and share one temp file (a
+# 500). One lock makes each change atomic; reads stay lock-free because the
+# write itself is an atomic rename.
+_LOCK = threading.RLock()
+
+
+# A laptop that wakes only for a maintenance moment (a "DarkWake", about two
+# seconds) is asleep again before an upload can finish: the cron fires inside
+# the wake, the upload starts, the machine sleeps, and the transfer freezes
+# until the next wake - 16 minutes later, then times out. While a clip is being
+# posted we hold an idle-sleep assertion; caffeinate drops it by itself after
+# -t seconds, so a crash cannot leave the Mac awake forever.
+_AWAKE: dict[str, subprocess.Popen] = {}
+
+
+def _hold_awake(key: str) -> None:
+    exe = shutil.which("caffeinate")
+    if not exe or not config.KEEP_AWAKE:
+        return
+    _release_awake(key)
+    try:
+        _AWAKE[key] = subprocess.Popen([exe, "-i", "-t", str(CLAIM_TIMEOUT)],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def _release_awake(key: str) -> None:
+    proc = _AWAKE.pop(key, None)
+    if proc and proc.poll() is None:
+        proc.terminate()
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _LOCK:
+            return fn(*args, **kwargs)
+    return wrapper
 
 NEW, APPROVED, UPLOADING, UPLOADED, FAILED, SKIPPED = (
     "new", "approved", "uploading", "uploaded", "failed", "skipped")
@@ -67,11 +114,13 @@ def _flatten(reg: dict) -> dict:
 
 def _save(reg: dict) -> None:
     reg["updated"] = time.time()
-    tmp = REGISTRY.with_suffix(".json.tmp")
+    # A name per writer, so nobody can rename another writer's half-built file.
+    tmp = REGISTRY.with_name(f"{REGISTRY.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(reg, indent=2))
     os.replace(tmp, REGISTRY)
 
 
+@_locked
 def sync() -> dict:
     """Pick up clips rendered since the last look. Never touches existing rows."""
     reg = _load()
@@ -164,6 +213,7 @@ def stats() -> dict:
     }
 
 
+@_locked
 def set_status(job_id: str, index: int, status: str,
                description: str | None = None) -> dict:
     """Approving can carry a description; None leaves whatever is stored."""
@@ -188,6 +238,7 @@ def set_status(job_id: str, index: int, status: str,
     return row
 
 
+@_locked
 def post_now(job_id: str, index: int, description: str | None = None) -> dict:
     """Approve this clip and put it at the front of the queue.
 
@@ -218,6 +269,7 @@ def capacity_left() -> int:
     return max(0, config.YT_DAILY_LIMIT - uploaded_today())
 
 
+@_locked
 def approve_all() -> int:
     reg = _load()
     n = 0
@@ -231,6 +283,7 @@ def approve_all() -> int:
     return n
 
 
+@_locked
 def claim_next(base_url: str) -> dict | None:
     """Hand n8n the next clip to upload and mark it in flight.
 
@@ -270,6 +323,7 @@ def claim_next(base_url: str) -> dict | None:
     row["claimed_at"] = time.time()
     row["attempts"] = row.get("attempts", 0) + 1
     _save(reg)
+    _hold_awake(key(row["job_id"], row["index"]))     # stay up until it reports back
 
     return {
         **row,
@@ -320,6 +374,7 @@ def youtube_meta(row: dict) -> dict:
     }
 
 
+@_locked
 def record_result(job_id: str, index: int, video_id: str | None,
                   error: str | None) -> dict:
     reg = _load()
@@ -342,6 +397,7 @@ def record_result(job_id: str, index: int, video_id: str | None,
         row.update(status=FAILED, error=error or "upload failed")
     row.pop("claimed_at", None)
     _save(reg)
+    _release_awake(key(job_id, index))
 
     if row["status"] == UPLOADED and config.CLEAN_CLIP_AFTER_UPLOAD:
         from . import storage              # local: storage imports uploads

@@ -30,7 +30,7 @@ MAX_HEIGHT = int(os.getenv("MAX_HEIGHT", "1080"))
 # Clipper never talks to YouTube itself; it only keeps the queue and tells n8n
 # what to post next. PUBLIC_URL is how n8n reaches this server.
 YT_PRIVACY = os.getenv("YT_PRIVACY", "public").strip().lower()
-YT_DAILY_LIMIT = int(os.getenv("YT_DAILY_LIMIT", "10"))
+YT_DAILY_LIMIT = int(os.getenv("YT_DAILY_LIMIT", "20"))
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678/webhook/clipper-upload").strip()
 
@@ -41,6 +41,9 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678/webhook/cl
 CATCHUP = os.getenv("CATCHUP", "true").lower() == "true"
 DRIP_HOURS = [int(h) for h in os.getenv("DRIP_HOURS", "9,14,19").split(",") if h.strip()]
 CATCHUP_EVERY = int(os.getenv("CATCHUP_EVERY", "300"))   # seconds between checks
+
+# Hold the Mac awake while a clip is uploading (macOS only; uses caffeinate).
+KEEP_AWAKE = os.getenv("KEEP_AWAKE", "true").lower() == "true"
 
 # A job interrupted by a restart picks up where it left off (download and
 # transcript are cached), so the default is to just carry on.
